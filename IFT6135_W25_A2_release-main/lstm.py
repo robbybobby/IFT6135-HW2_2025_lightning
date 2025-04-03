@@ -56,11 +56,15 @@ class LSTMCell(nn.Module):
         # Concatenate input and previous hidden state along the feature dimension
         combined = torch.cat([x, h], dim=1)  # (batch_size, input_size + hidden_size)
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
+        #reminder for self review: combined fills the combined_dim and hidden_size values
+        input_gate_val = torch.sigmoid(self.input_gate(combined))
+        forget_gate_val = torch.sigmoid(self.forget_gate(combined))
+        output_gate_val = torch.sigmoid(self.output_gate(combined))
+        candidate_cell_state = torch.tanh(self.candidate_cell(combined))
+        c_t = forget_gate_val*c + input_gate_val*candidate_cell_state
+        h_t = output_gate_val*torch.tanh(c_t)
+        return h_t, c_t
 
-        raise NotImplementedError
 
 ########################################################################################
 ########################################################################################
@@ -111,16 +115,14 @@ class LSTM(nn.Module):
             h_n (torch.Tensor): Final hidden states (num_layers, batch_size, hidden_size).
             c_n (torch.Tensor): Final cell states (num_layers, batch_size, hidden_size).
         """
-        raise NotImplementedError
 
         batch_size, seq_len, _ = x.size() 
         
         # Initialize hidden and cell states if not provided.
         if hx is None:
-            # ==========================
-            # TODO: Write your code here
-            # ==========================
-            raise NotImplementedError
+            #reminder for self review: based on below size. Also same type and on the same device as the input.
+            h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device = x.device, dtype= x.dtype)
+            c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device = x.device, dtype= x.dtype)
         else:
             h0, c0 = hx  # (num_layers, batch_size, hidden_size), (num_layers, batch_size, hidden_size)
 
@@ -136,13 +138,12 @@ class LSTM(nn.Module):
             
             # Iterate over the time steps
             for t in range(seq_len):
-                # ==========================
-                # TODO: Write your code here
-                # ==========================
                 # Extract x_t from "output" tensor, and compute h_t, c_t using the LSTM "cell" based on x_t, h_t, and c_t
 
-                x_t = None  # (batch_size, input_size) if layer_idx == 0, (batch_size, hidden_size) otherwise
-                h_t, c_t = None, None  # (batch_size, hidden_size), (batch_size, hidden_size)
+                #reminder for self review: Getting all the batch_size and hidden_size/input_size.
+                x_t = output[:, t, :]  # (batch_size, input_size) if layer_idx == 0, (batch_size, hidden_size) otherwise
+                #reminder for self review: We output from the cell which the second input is defined (h, c = hx) in forward.
+                h_t, c_t = cell(x_t, (h_t, c_t))  # (batch_size, hidden_size), (batch_size, hidden_size)
 
                 layer_outputs.append(h_t.unsqueeze(1))  # (batch_size, 1, hidden_size)
             
@@ -226,12 +227,16 @@ class LSTMLM(nn.Module):
             - h (`torch.FloatTensor` of shape `(num_layers, batch_size, hidden_size)`)
             - c (`torch.FloatTensor` of shape `(num_layers, batch_size, hidden_size)`)
         """
+        
+        #reminder for self review: Based on line 193, where we are using forward "forward(self, input: Tensor) -> Tensor". Where x is inputs.
+        embedded_value= self.embedding(x)
+        #reminder for self review: For LSTM, based on line 195-198 where forward is "forward(self, x, hx=None) -> output, (h_n, c_n)"
+        lstm_value, hidden_states = self.lstm(embedded_value, hidden_states)
+        #reminder for self review: using the classifier from line 200 to get logits using "forward(self, input: Tensor) -> Tensor"
+        logits = self.classifier(lstm_value)
+        return logits, hidden_states
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
 
-        raise NotImplementedError
 
 ########################################################################################
 ########################################################################################
