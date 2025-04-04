@@ -45,11 +45,14 @@ class LayerNorm(nn.Module):
             The output tensor, having the same shape as `inputs`.
         """
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-        
-        raise NotImplementedError
+        #reminder for self review: How we get expectation
+        expectation = inputs.mean(dim=-1, keepdim=True)
+        #reminder for self review: According to the equation from the assignment 2 paper
+        biased_var = ((inputs-expectation)**2).mean(dim=-1, keepdim=True)
+        #reminder for self review: According to the layernorm equation
+        outputs = ((inputs-expectation) / torch.sqrt(biased_var+self.eps))*self.weight+self.bias
+
+        return outputs
 
     def reset_parameters(self):
         nn.init.ones_(self.weight)
@@ -114,11 +117,18 @@ class MultiHeadedAttention(nn.Module):
             should not influence on the 6th token (7 > 5).
         """
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-
-        raise NotImplementedError
+        #reminder for self review: weights = softmax(Q * K^{T} / sqrt(head_size))
+        weight = torch.matmul(queries, keys.transpose(-2, -1)) / math.sqrt(self.head_size)
+        #reminder for self review: sequence_length is at 2 position of of the query shape. Need sequence_length for mask making
+        sequence_length = queries.size(2)
+        #reminder for self review: Masking over lower triangle, so the upper triangle is set to ones
+        mask = torch.triu(torch.ones(sequence_length,sequence_length), diagonal=1).bool()
+        mask = mask.to(weight.device)
+        #reminder for self review: Setting -inf to attention mask
+        autoregressive_mask = weight.masked_fill(mask, float('-inf'))
+        #reminder for self review: Apply softmax to attention mask to get attention probability
+        attention_weights = F.softmax(autoregressive_mask, dim=-1)
+        return attention_weights
 
     def apply_attention(self, queries, keys, values):
         """
@@ -176,12 +186,13 @@ class MultiHeadedAttention(nn.Module):
             
         """
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-
-        raise NotImplementedError
-
+        #reminder for self review: Use line 78
+        attn_weights = self.get_attention_weights(queries, keys)
+        #reminder for self review: attended_values = weights * V, using matrix multiplication
+        attended_values = torch.matmul(attn_weights, values)
+        #reminder for self review: outputs = concat(attended_values), using merge_heads
+        outputs = self.merge_heads(attended_values)
+        return outputs, attn_weights
 
     def split_heads(self, tensor):
         """
@@ -203,12 +214,14 @@ class MultiHeadedAttention(nn.Module):
             Reshaped and transposed tensor containing the separated head vectors. 
             Here `dim` is the same dimension as the one in the definition of the input `tensor` above.
         """
-
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-
-        raise NotImplementedError
+        #reminder for self review: Getting the 3 dimensions size from tensor for calculation
+        batch_size, sequence_length, concatenated_head_vector = tensor.shape
+        #reminder for self review: Get dim size.
+        dim = concatenated_head_vector // self.num_heads
+        #reminder for self review: Reshaping from (batch_size, sequence_length, num_heads * dim) to (batch_size, sequence_length, num_heads, dim)
+        output = tensor.view(batch_size, sequence_length, self.num_heads, dim)
+        #reminder for self review: transpose by swapping num_heads and sequence_length
+        return (output.transpose(1,2))
 
     def merge_heads(self, tensor):
         """
@@ -232,11 +245,11 @@ class MultiHeadedAttention(nn.Module):
             Here `dim` is the same dimension as the one in the definition of the input `tensor` above.
         """
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-        
-        raise NotImplementedError
+        #reminder for self review: inverse of split_heads so we inverse
+        batch_size, num_heads, sequence_length, dim = tensor.shape
+        transposed = tensor.transpose(1,2)
+        output = transposed.contiguous().view(batch_size, sequence_length, num_heads*dim)
+        return output
 
     def forward(self,  queries: Tensor, keys: Tensor, values: Tensor):
         """
@@ -291,14 +304,22 @@ class MultiHeadedAttention(nn.Module):
             backpropagation. It is returned here for debugging purposes.
         """
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-        
-        raise NotImplementedError
+        #reminder for self review: Use linear projection function previously defined at line 73-75, based on line 169-271.
+        q = self.W_Q(queries)
+        k = self.W_K(keys)
+        v = self.W_V(values)
+        #reminder for self review: split for apply attention
+        queries_sh = self.split_heads(q)
+        keys_sh = self.split_heads(k)
+        values_sh = self.split_heads(v)
+        #reminder for self review: call apply attention for "context = attention(Q, K, V)"
+        context, attn_weights = self.apply_attention(queries_sh, keys_sh, values_sh)
+        #reminder for self review: apply output projection previously defined at line 76, for outputs = context * W_{O} + b_{O}.
+        output = self.W_O(context)
 
         # Use clone().detach() to detach attn_weights from the computation graph
         # Since we don't need to backpropagate through them, we can detach them from the graph
+        return output, attn_weights.clone().detach()
         
 
 ########################################################################################
@@ -457,12 +478,21 @@ class GPTEmbedding(nn.Module):
             The tensor containing the positional embeddings.
         """
 
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-
-        raise NotImplementedError
-
+        #reminder for self review: Initializing the positional encoding matrix
+        position_enc = torch.zeros(n_positions, dimension)
+        #reminder for self review: Get positional tensor.
+        position = torch.arange(0, n_positions, dtype=torch.float).unsqueeze(1)
+        #reminder for self review: Get 10000^((i//2)/dimension)
+        denominator = torch.pow(10000, torch.arange(0, dimension, 2, dtype=torch.float) / dimension)
+        #reminder for self review: apply sin to all
+        position_enc[:,0::2] = torch.sin(position/denominator)
+        #reminder for self review: apply cos to odd
+        if dimension % 2 == 1:
+            position_enc[:,1::2] = torch.cos(position/denominator[:-(dimension//2)])
+        #reminder for self review: skip sin on even
+        else:
+            position_enc[:,1::2] = torch.cos(position/denominator)
+        return position_enc
 
     def forward(self, tokens: Tensor) -> Tensor:
         """
@@ -482,11 +512,17 @@ class GPTEmbedding(nn.Module):
             of the 1st sequence in the batch (index 0).
         
         """
-        # ==========================
-        # TODO: Write your code here
-        # ==========================
-        
-        raise NotImplementedError
+        #reminder for self review: Get embeddings for tokens using line 453
+        token_embeddings = self.tokens(tokens)
+        #reminder for self review: Get sequence_length
+        batch_size, sequence_length = tokens.size()
+        #reminder for self review: Get position embeddings for sequence_length
+        position_embeddings = self.position_encoding[:sequence_length,:]
+        #reminder for self review: Broadcast position_embeddings to match batch_size
+        position_embeddings = position_embeddings.unsqueeze(0).expand(batch_size,-1,-1)
+        #reminder for self review: calculate embeddings
+        embeddings = token_embeddings + position_embeddings
+        return embeddings
 
 ########################################################################################
 ########################################################################################
@@ -553,8 +589,13 @@ class GPT(nn.Module):
                 and 
                 (batch_size, num_layers, num_heads, sequence_length, sequence_length)
         """
-
-        raise NotImplementedError
+        #reminder for self review: Get embedding from input token
+        embeddings = self.embedding(x)
+        #reminder for self review: Decode embedding
+        hidden_state, (hidden_states, attentions) = self.decoder(embeddings)
+        #reminder for self review: Get logits from classifier
+        logits = self.classifier(hidden_state)
+        return logits, (hidden_states, attentions)
 
 ########################################################################################
 ########################################################################################

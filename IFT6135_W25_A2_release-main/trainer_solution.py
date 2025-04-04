@@ -49,12 +49,70 @@ def get_loss_and_accuracy(logits, targets, eq_positions, mask, reduction='mean')
         The accuracy over the batch where a sequence is counted as correct only if 
         all valid RHS tokens are predicted correctly.
     """
-    # ==========================
-    # TODO: Write your code here
-    # ==========================
+    #reminder for self review: Get device
+    device = logits.device
 
-    raise NotImplementedError
+    #reminder for self review: Share device across inputs
+    targets = targets.to(device)
+    eq_positions = eq_positions.to(device)
+    mask = mask.to(device)
 
+    #reminder for self review: Initialize right-hand side mask
+    b, s = mask.shape
+    rhs_mask = torch.zeros_like(mask,dtype=torch.bool).to(device)
+
+    #reminder for self review: Set right-hand side mask for each sequence
+    for i in range(b):
+        start = eq_positions[i]+1
+        valid = mask[i].nonzero()
+        if valid.numel() > 0:
+            end = valid[-1].item()+1
+            rhs_mask[i, start:end] = mask[i, start:end]
+
+    #reminder for self review: Log probabilities
+    log_probabilities = F.log_softmax(logits, dim=-1)
+    #reminder for self review: Log probabilities of correct tokens gathered
+    gather_lp = log_probabilities.gather(-1,targets.unsqueeze(-1)).squeeze(-1)
+
+    #reminder for self review: Match device
+    gather_lp = gather_lp.to(device)
+    rhs_mask = rhs_mask.to(device)
+
+    #reminder for self review: applying rhs_mask to the log probabilities
+    mask_lp = gather_lp * rhs_mask
+
+    #reminder for self review: Getting the length of samples
+    sample_lengths = rhs_mask.sum(dim=-1).float()
+    
+    #reminder for self review: remove zero length of samples
+    sample_lengths = torch.max(sample_lengths, torch.tensor(1.0, device=device))
+    
+    #reminder for self review: get sample loss per RHS masked
+    sampleloss_per_RHS = -mask_lp.sum(dim=-1) / sample_lengths
+
+    #reminder for self review: Get accuracy per sample
+    sample_accuracy = logits.argmax(dim=-1)
+
+    #reminder for self review: Get all correct samples
+    confirm_samples = torch.zeros(b, dtype=torch.bool, device=device)
+    for i in range(b):
+        indices = rhs_mask[i].nonzero().flatten()
+        if indices.numel() > 0:
+            confirm_samples[i] = torch.all(sample_accuracy[i, indices] == targets[i, indices])
+        else:
+            confirm_samples[i] = False
+
+    #reminder for self review: Reductions
+    if reduction == 'none':
+        loss = sampleloss_per_RHS
+        accuracy = confirm_samples.float()
+    elif reduction == 'sum':
+        loss = sampleloss_per_RHS.sum()
+        accuracy = confirm_samples.float().sum().item()
+    else:
+        loss = sampleloss_per_RHS.mean()
+        accuracy = confirm_samples.float().mean().item()
+    
     return loss, accuracy
 
 ########################################################################################
@@ -187,8 +245,8 @@ def train(
             # ==========================
             # TODO: Write your code here
             # ==========================
-            # scheduler.step()
-            # current_lr = scheduler.optimizer.param_groups[0]["lr"]
+            #scheduler.step()
+            #current_lr = scheduler.optimizer.param_groups[0]["lr"]
             # ==========================
             # ==========================
               

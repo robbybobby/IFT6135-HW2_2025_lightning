@@ -61,6 +61,7 @@ class LSTMCell(nn.Module):
         forget_gate_val = torch.sigmoid(self.forget_gate(combined))
         output_gate_val = torch.sigmoid(self.output_gate(combined))
         candidate_cell_state = torch.tanh(self.candidate_cell(combined))
+        #reminder for self review: Cell state update and hidden state update
         c_t = forget_gate_val*c + input_gate_val*candidate_cell_state
         h_t = output_gate_val*torch.tanh(c_t)
         return h_t, c_t
@@ -120,7 +121,7 @@ class LSTM(nn.Module):
         
         # Initialize hidden and cell states if not provided.
         if hx is None:
-            #reminder for self review: based on below size. Also same type and on the same device as the input.
+            #reminder for self review: based on below size for h0 and c0. Also same type and on the same device as the input.
             h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device = x.device, dtype= x.dtype)
             c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device = x.device, dtype= x.dtype)
         else:
